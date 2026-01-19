@@ -8,10 +8,10 @@ A simple Cloudflare Worker that exposes the **Sea Lion** model (`@cf/aisingapore
 
 | Endpoint  | Method | Description                     |
 | --------- | ------ | ------------------------------- |
-| `/`       | GET    | Health check & API info         |
+| `/`       | GET    | Starter prompt for AI coding tools |
 | `/health` | GET    | Health check                    |
 | `/chat`   | POST   | Non-streaming chat completion   |
-| `/stream` | POST   | Streaming chat completion (SSE) |
+| `/stream` | POST   | Streaming chat completion (plain text) |
 
 ## Usage
 
@@ -54,11 +54,9 @@ curl -X POST https://your-worker.workers.dev/stream \
 
 ## Starter Prompt for AI Coding Tools
 
-Copy and paste this prompt into Lovable, Bolt, or any AI coding platform to quickly integrate the Sea Lion API:
+**Easy way:** Just visit your deployed worker URL (e.g., `https://cf-sealion.your-subdomain.workers.dev/`) and copy the entire response - it contains a ready-to-use prompt with your actual API URL!
 
----
-
-**Copy this prompt:**
+**Or copy this prompt manually:**
 
 ```
 I want to integrate the Sea Lion AI model into my app. Here's the API details:
@@ -82,11 +80,11 @@ ENDPOINTS:
    }
    Response: { "response": "AI response text" }
 
-2. POST /stream - Streaming chat completion (Server-Sent Events)
+2. POST /stream - Streaming chat completion (plain text stream)
    Same request body as /chat
-   Response: SSE stream with text chunks
+   Response: Plain text stream (no parsing needed!)
 
-EXAMPLE FETCH CODE:
+EXAMPLE CODE (Non-streaming):
 
 const response = await fetch('https://your-worker.workers.dev/chat', {
   method: 'POST',
@@ -99,10 +97,30 @@ const response = await fetch('https://your-worker.workers.dev/chat', {
 const data = await response.json();
 console.log(data.response);
 
-Please help me build [describe your feature] using this AI API.
-```
+EXAMPLE CODE (Streaming):
 
----
+const response = await fetch('https://your-worker.workers.dev/stream', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    prompt: 'Tell me a story',
+    system: 'You are a helpful assistant'
+  })
+});
+
+const reader = response.body.getReader();
+const decoder = new TextDecoder();
+let text = '';
+
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+  text += decoder.decode(value);
+  console.log(text); // Plain text, no parsing needed!
+}
+
+Please help me build [describe your feature] using this Sea Lion AI API.
+```
 
 > **Important:** Replace `https://your-worker.workers.dev` with your actual deployed worker URL.
 
@@ -123,22 +141,25 @@ const response = await fetch('https://your-worker.workers.dev/chat', {
 const data = await response.json();
 console.log(data.response);
 
-// Streaming
+// Streaming (returns plain text, no parsing needed!)
 const streamResponse = await fetch('https://your-worker.workers.dev/stream', {
 	method: 'POST',
 	headers: { 'Content-Type': 'application/json' },
 	body: JSON.stringify({
-		messages: [{ role: 'user', content: 'Tell me about AI' }],
+		prompt: 'Tell me about AI',
+		system: 'You are a helpful assistant',
 	}),
 });
 
 const reader = streamResponse.body.getReader();
 const decoder = new TextDecoder();
+let text = '';
 
 while (true) {
 	const { done, value } = await reader.read();
 	if (done) break;
-	console.log(decoder.decode(value));
+	text += decoder.decode(value);
+	console.log(text);
 }
 ```
 
@@ -223,7 +244,7 @@ This starts a local server at `http://localhost:8787`.
 
 ### Streaming (`/stream`)
 
-Returns Server-Sent Events (SSE) with chunks of the response.
+Returns plain text chunks directly - no JSON parsing needed! Just read the stream and concatenate the text.
 
 ## About Sea Lion
 

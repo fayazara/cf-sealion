@@ -2,6 +2,61 @@ export interface Env {
 	AI: Ai;
 }
 
+/**
+ * Transform SSE stream from Workers AI to plain text stream
+ * Parses data: {"response": "text"} format and extracts just the text
+ */
+function createTextStreamTransformer(): TransformStream<Uint8Array, Uint8Array> {
+	const decoder = new TextDecoder();
+	const encoder = new TextEncoder();
+	let buffer = "";
+
+	return new TransformStream({
+		transform(chunk, controller) {
+			buffer += decoder.decode(chunk, { stream: true });
+
+			const lines = buffer.split("\n");
+			buffer = lines.pop() || "";
+
+			for (const line of lines) {
+				const trimmed = line.trim();
+				if (!trimmed || trimmed.startsWith(":")) continue;
+
+				if (trimmed.startsWith("data: ")) {
+					const data = trimmed.slice(6);
+					if (data === "[DONE]") return;
+
+					try {
+						const json = JSON.parse(data);
+						if (typeof json.response === "string" && json.response.length > 0) {
+							controller.enqueue(encoder.encode(json.response));
+						} else if (json.choices?.[0]?.delta?.content) {
+							controller.enqueue(encoder.encode(json.choices[0].delta.content));
+						}
+					} catch {
+						// Skip malformed JSON
+					}
+				}
+			}
+		},
+		flush(controller) {
+			if (buffer.trim().startsWith("data: ")) {
+				const data = buffer.trim().slice(6);
+				if (data !== "[DONE]") {
+					try {
+						const json = JSON.parse(data);
+						if (typeof json.response === "string" && json.response.length > 0) {
+							controller.enqueue(encoder.encode(json.response));
+						}
+					} catch {
+						// Skip malformed JSON
+					}
+				}
+			}
+		},
+	});
+}
+
 // CORS headers for cross-origin requests (needed for Lovable)
 const corsHeaders = {
 	"Access-Control-Allow-Origin": "*",
@@ -46,7 +101,7 @@ ENDPOINTS:
    Same request body as /chat
    Response: SSE stream with text chunks
 
-EXAMPLE FETCH CODE:
+EXAMPLE CODE (Non-streaming):
 
 const response = await fetch('${baseUrl}/chat', {
   method: 'POST',
@@ -59,7 +114,29 @@ const response = await fetch('${baseUrl}/chat', {
 const data = await response.json();
 console.log(data.response);
 
-Please help me build [describe your feature] using this AI API.`;
+EXAMPLE CODE (Streaming):
+
+const response = await fetch('${baseUrl}/stream', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    prompt: 'Tell me a story',
+    system: 'You are a helpful assistant'
+  })
+});
+
+const reader = response.body.getReader();
+const decoder = new TextDecoder();
+let text = '';
+
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+  text += decoder.decode(value);
+  console.log(text); // Plain text, no parsing needed!
+}
+
+Please help me build [describe your feature] using this Sea Lion AI API.`;
 
 			return new Response(starterPrompt, {
 				headers: {
@@ -178,9 +255,12 @@ Please help me build [describe your feature] using this AI API.`;
 				stream: true,
 			});
 
-			return new Response(stream, {
+			// Transform SSE to plain text stream
+			const transformedStream = (stream as ReadableStream).pipeThrough(createTextStreamTransformer());
+
+			return new Response(transformedStream, {
 				headers: {
-					"Content-Type": "text/event-stream",
+					"Content-Type": "text/plain; charset=utf-8",
 					"Cache-Control": "no-cache",
 					Connection: "keep-alive",
 					...corsHeaders,
