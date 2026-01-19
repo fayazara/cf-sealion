@@ -17,9 +17,60 @@ export default {
 		}
 
 		const url = new URL(request.url);
+		const baseUrl = url.origin;
+
+		// Starter prompt for AI coding tools
+		if (url.pathname === "/") {
+			const starterPrompt = `I want to integrate the Sea Lion AI model into my app. Here's the API details:
+
+API Base URL: ${baseUrl}
+
+ENDPOINTS:
+
+1. POST /chat - Non-streaming chat completion
+   Request body:
+   {
+     "prompt": "Your question here",
+     "system": "Optional system prompt"
+   }
+   OR
+   {
+     "messages": [
+       {"role": "system", "content": "System prompt"},
+       {"role": "user", "content": "User message"}
+     ]
+   }
+   Response: { "response": "AI response text" }
+
+2. POST /stream - Streaming chat completion (Server-Sent Events)
+   Same request body as /chat
+   Response: SSE stream with text chunks
+
+EXAMPLE FETCH CODE:
+
+const response = await fetch('${baseUrl}/chat', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    prompt: 'Hello!',
+    system: 'You are a helpful assistant'
+  })
+});
+const data = await response.json();
+console.log(data.response);
+
+Please help me build [describe your feature] using this AI API.`;
+
+			return new Response(starterPrompt, {
+				headers: {
+					"Content-Type": "text/plain; charset=utf-8",
+					...corsHeaders,
+				},
+			});
+		}
 
 		// Health check endpoint
-		if (url.pathname === "/" || url.pathname === "/health") {
+		if (url.pathname === "/health") {
 			return new Response(
 				JSON.stringify({
 					status: "ok",
